@@ -1,7 +1,8 @@
 # MCP PDP Server - UU No 27 Tahun 2022
 # Multi-stage build for smaller image
 
-FROM python:3.11-slim as builder
+# Use specific digest for reliability
+FROM python:3.11-slim-bookworm as builder
 
 WORKDIR /app
 
@@ -15,7 +16,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --user -r requirements.txt
 
 # Production stage
-FROM python:3.11-slim
+FROM python:3.11-slim-bookworm
 
 WORKDIR /app
 
