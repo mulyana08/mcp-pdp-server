@@ -44,9 +44,6 @@ jobs:
       contents: read
       packages: write
 
-    outputs:
-      image_tag: ${{ steps.meta.outputs.tags }}
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -85,25 +82,15 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup SSH Key
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -p ${{ secrets.SSH_PORT }} ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts 2>/dev/null
-
-      - name: Create deployment directory on server
-        run: |
-          ssh -i ~/.ssh/deploy_key -p ${{ secrets.SSH_PORT }} ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "mkdir -p ${{ secrets.DEPLOY_PATH }}"
-
-      - name: Copy docker-compose to server
-        run: |
-          scp -i ~/.ssh/deploy_key -P ${{ secrets.SSH_PORT }} docker-compose.yml ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${{ secrets.DEPLOY_PATH }}/
-
-      - name: Deploy to Server
-        run: |
-          ssh -i ~/.ssh/deploy_key -p ${{ secrets.SSH_PORT }} ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << 'ENDSSH'
-            set -e
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          script: |
+            mkdir -p ${{ secrets.DEPLOY_PATH }}
             cd ${{ secrets.DEPLOY_PATH }}
             
             # Login to GitHub Container Registry
@@ -113,27 +100,27 @@ jobs:
             docker pull ghcr.io/${{ github.repository }}:latest
             
             # Create .env file
-            cat > .env << EOF
-          GOOGLE_API_KEY=${{ secrets.GOOGLE_API_KEY }}
-          PINECONE_API_KEY=${{ secrets.PINECONE_API_KEY }}
-          PINECONE_INDEX_NAME=${{ secrets.PINECONE_INDEX_NAME }}
-          EOF
+            cat > .env << 'ENVEOF'
+            GOOGLE_API_KEY=${{ secrets.GOOGLE_API_KEY }}
+            PINECONE_API_KEY=${{ secrets.PINECONE_API_KEY }}
+            PINECONE_INDEX_NAME=${{ secrets.PINECONE_INDEX_NAME }}
+            ENVEOF
             
             # Stop and remove existing container
             docker stop mcp-pdp-server 2>/dev/null || true
             docker rm mcp-pdp-server 2>/dev/null || true
             
-            # Start with docker-compose
-            docker-compose up -d
+            # Run container
+            docker run -d \
+              --name mcp-pdp-server \
+              --restart unless-stopped \
+              -p 8000:8000 \
+              --env-file .env \
+              ghcr.io/${{ github.repository }}:latest
             
-            # Wait and verify
+            # Verify
             sleep 5
             docker ps | grep mcp-pdp-server && echo "✅ Deployment successful!" || echo "❌ Deployment failed"
-          ENDSSH
-
-      - name: Cleanup SSH Key
-        if: always()
-        run: rm -f ~/.ssh/deploy_key
 
   # Job 4: PR Check (for Pull Requests only)
   pr-check:
