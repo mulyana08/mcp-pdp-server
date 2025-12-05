@@ -1,0 +1,33 @@
+version: '3.8'
+
+services:
+  mcp-pdp-server:
+    image: ghcr.io/mulyana08/mcp-pdp-server:latest
+    container_name: mcp-pdp-server
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - PINECONE_API_KEY=${PINECONE_API_KEY}
+      - PINECONE_INDEX_NAME=${PINECONE_INDEX_NAME:-uu-pdp-27-2022}
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./data:/app/data:ro
+    networks:
+      - mcp-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "print('healthy')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  mcp-network:
+    driver: bridge
